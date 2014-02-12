@@ -84,6 +84,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
     _setSummaryHTML: function(summary_container) {
         var project_name = this.project.Name;
         var release = this.release;
+        var done_text = { "Acceptance": " of stories accepted", "FeatureCompletion": "of features completed" };
         
         var summary_message = "<b>" + project_name + "</b>";
         var today = new Date();
@@ -111,7 +112,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                         summary_message += "<br/>With " + remaining_days  + " workdays remaining in a ";
                         summary_message += total_days + "-workday release";
                         
-                        summary_message += ", " + percentage_complete + "% is done.";
+                        summary_message += ", " + percentage_complete + "% " + done_text[this.health_source];
                     }
                     summary_container.update({summary_message:summary_message});
                 },

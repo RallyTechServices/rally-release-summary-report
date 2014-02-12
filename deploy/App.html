@@ -3,11 +3,11 @@
 <head>
     <title>Release Health</title>
     <!--  (c) 2014 Rally Software Development Corp.  All Rights Reserved. -->
-    <!--  Build Date: Tue Feb 11 2014 19:59:43 GMT-0800 (PST) -->
+    <!--  Build Date: Wed Feb 12 2014 10:03:05 GMT-0800 (PST) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Tue Feb 11 2014 19:59:43 GMT-0800 (PST)";
-        var CHECKSUM = 28036948666;
+        var APP_BUILD_DATE = "Wed Feb 12 2014 10:03:05 GMT-0800 (PST)";
+        var CHECKSUM = 29644051084;
     </script>
     
     <script type="text/javascript" src="/apps/2.0rc2/sdk.js"></script>
@@ -101,6 +101,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
     _setSummaryHTML: function(summary_container) {
         var project_name = this.project.Name;
         var release = this.release;
+        var done_text = { "Acceptance": " of stories accepted", "FeatureCompletion": "of features completed" };
         
         var summary_message = "<b>" + project_name + "</b>";
         var today = new Date();
@@ -128,7 +129,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                         summary_message += "<br/>With " + remaining_days  + " workdays remaining in a ";
                         summary_message += total_days + "-workday release";
                         
-                        summary_message += ", " + percentage_complete + "% is done.";
+                        summary_message += ", " + percentage_complete + "% " + done_text[this.health_source];
                     }
                     summary_container.update({summary_message:summary_message});
                 },
@@ -502,6 +503,7 @@ Ext.override(Rally.ui.chart.Chart,{
         this._unmask();
     }
 });
+
 Ext.define('Rally.technicalservices.util.Utilities', {
     singleton: true,
     hashToArray: function(hash) {
@@ -673,23 +675,7 @@ Ext.define('CustomApp', {
         });
     },
     getSettingsFields: function() {
-        var health_store = Ext.create('Rally.data.custom.Store',{
-            data: [
-                {Name:'Acceptance',Value:'Acceptance'},
-                {Name:'Feature Completion',Value:'FeatureCompletion'}
-            ]
-        });
-        
         return [
-        { 
-            xtype:'combobox',
-            fieldLabel: 'Determine Health Based On',
-            store: health_store,
-            displayField:'Name',
-            valueField:'Value',
-            labelWidth:150,
-            name: 'health_source'
-        },
         {
             name: 'show_story_states',
             xtype: 'rallycheckboxfield',
@@ -701,6 +687,32 @@ Ext.define('CustomApp', {
             labelWidth: 150,
             xtype: 'rallycheckboxfield',
             fieldLabel: 'Show Feature Status'
+        },
+        { 
+            fieldLabel: 'Determine Health Based On',
+            labelWidth: 150,
+            name:'health_source',
+            xtype: 'rallycombobox',
+            displayField: '_display_field',
+            valueField: '_value_field',
+            storeConfig: {
+                model: 'TypeDefinition',
+                limit: 2,
+                pageSize: 2,
+                sorters: [{property:'CreationDate ASC'}],
+                autoLoad: false,
+                    listeners: {
+                    load: function(store,records){
+                        if ( records.length == 2 ) {
+                            records[0].set('_display_field',"Acceptance");
+                            records[0].set('_value_field',"Acceptance");
+                            records[1].set('_display_field',"Feature Completion");
+                            records[1].set('_value_field',"FeatureCompletion");
+                        }
+                    }
+                }
+            },
+            readyEvent: 'ready' //event fired to signify readiness
         }];
     },
     _getScheduleStates: function() {
@@ -752,6 +764,11 @@ Ext.define('CustomApp', {
                 {xtype:'container',itemId:'field_box', padding: 5, margin: 5}]
          });
          Ext.Array.each(fields,function(field){
+            if ( field.xtype == "rallycombobox" ) {
+                if ( field.storeConfig ) {
+                    field.storeConfig.autoLoad = true;
+                }
+            }
             me.settings_dialog.down('#field_box').add(field);
          });
          this.settings_dialog.show();
