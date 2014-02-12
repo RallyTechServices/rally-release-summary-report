@@ -2,6 +2,7 @@ Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
     logger: new Rally.technicalservices.Logger(),
+    schedule_states: [],
     items: [
         {xtype:'container',itemId:'message_box',tpl:'Hello, <tpl>{_refObjectName}</tpl>'},
         {xtype:'container',itemId:'release_box', padding: 5},
@@ -9,19 +10,29 @@ Ext.define('CustomApp', {
         {xtype:'tsinfolink'}
     ],
     launch: function() {
-        this.release_box = this.down('#release_box').add({
-            xtype:'rallyreleasecombobox',
-            fieldLabel: 'Release',
-            labelWidth: 50
+        this.logger.log("Launched with context ", this.getContext());
+        this._getScheduleStates().then({
+            scope: this,
+            success: function(states) {
+                this.schedule_states = states;
+                this.release_box = this.down('#release_box').add({
+                    xtype:'rallyreleasecombobox',
+                    fieldLabel: 'Release',
+                    labelWidth: 50
+                });
+                this.release_box.on('change',this._constructDisplay,this);
+                
+                if (typeof(this.getAppId()) == 'undefined' ) {
+                    // not inside Rally
+                    this._showExternalSettingsDialog(this.getSettingsFields());
+                } else {
+                    this._constructDisplay();
+                }
+            },
+            failure: function(error) {
+                alert("Could not load Schedule States " + error);
+            }
         });
-        this.release_box.on('change',this._constructDisplay,this);
-        
-        if (typeof(this.getAppId()) == 'undefined' ) {
-            // not inside Rally
-            this._showExternalSettingsDialog(this.getSettingsFields());
-        } else {
-            this._constructDisplay();
-        }
     },
     _constructDisplay: function() {
         this.logger.log("_constructDisplay");
@@ -33,10 +44,10 @@ Ext.define('CustomApp', {
             show_story_pie: this.getSetting('show_story_states'),
             show_feature_pie: this.getSetting('show_feature_status'),
             project: this.getContext().getProject(),
-            release_name: this.release_box.getRecord().get("Name")
+            release: this.release_box.getRecord(),
+            schedule_states: this.schedule_states
         });
     },
-  
     getSettingsFields: function() {
         return [{
             name: 'show_story_states',
@@ -50,6 +61,29 @@ Ext.define('CustomApp', {
             xtype: 'rallycheckboxfield',
             fieldLabel: 'Show Feature Status'
         }];
+    },
+    _getScheduleStates: function() {
+        var deferred = Ext.create('Deft.Deferred');
+        var me = this;
+        var states = [];
+        Rally.data.ModelFactory.getModel({
+            type: 'Defect',
+            success: function(model) {
+            model.getField('ScheduleState').getAllowedValueStore().load({
+                    callback: function(records, operation, success) {
+                        Ext.Array.each(records, function(allowedValue) {
+                            states.push(allowedValue.get('StringValue'));
+                        });
+                        if ( states[states.length-1] == "Accepted" ) {
+                            // force the last state to null so we know we stop at accepted
+                            states.push(null);
+                        }
+                        deferred.resolve(states);
+                    }
+                });
+            }
+        });
+        return deferred;
     },
     // ONLY FOR RUNNING EXTERNALLY
     _showExternalSettingsDialog: function(fields){

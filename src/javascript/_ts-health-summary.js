@@ -1,6 +1,7 @@
 Ext.define('Rally.technicalservices.HealthSummary',{
     extend: 'Ext.Container',
     alias: 'widget.technicalserviceshealthsummary',
+   /* requires: ['Rally.technicalservices.util.Utilities'], */
     config: {
         /*
          * @cfg {Boolean}
@@ -21,10 +22,22 @@ Ext.define('Rally.technicalservices.HealthSummary',{
          */
         project: null,
         /*
-         * @cfg {String}
-         * The name of a release to filter on
+         * @cfg {Ext.data.Model}
+         * The release for filtering
          */
-        release_name: ""
+        release: null,
+        /*
+         * @cfg {String}
+         * Determine health from % of stories accepted or % of PIs completed
+         */
+        health_source: 'UserStory',
+        /*
+         * @cfg [{String}]
+         * 
+         * The schedule states for this workspace. The last TWO of the array
+         * are Accepted and beyond Accepted. Use null if Accepted is the final state
+         */
+        schedule_states: ["Defined","In-Progress","Completed","Accepted",null]
     },
     constructor: function(config) {
         this.mergeConfig(config);
@@ -36,14 +49,14 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         var show_feature_pie = this.show_feature_pie;
         // TODO: change to a real project, not just an object
         var project_name = this.project.Name;
-        var release_name = this.release_name;
+        var release_name = this.release.get("Name");
                 
         this.add({
             xtype:'container',
             items:[{
                 xtype:'container',
                 itemId:'summary_box',
-                html: "<b>" + project_name + "</b>",
+                tpl: "<tpl>{summary_message}</tpl>",
                 padding: 5
             },
             { 
@@ -53,6 +66,8 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                 layout: { type:'hbox' }
             }]
         });
+        this._setSummaryHTML(this.down('#summary_box'));
+        
         if ( show_story_pie ) {
             this._addStoryPieBox(this.down('#chart_boxes'),release_name);
         }
@@ -62,6 +77,91 @@ Ext.define('Rally.technicalservices.HealthSummary',{
 //        if ( show_story_pie ) {
 //            this._addStoryPieBox(this.down('#chart_boxes'),release_name);
 //        }
+    },
+    _setSummaryHTML: function(summary_container) {
+        var project_name = this.project.Name;
+        var release = this.release;
+        
+        var summary_message = "<b>" + project_name + "</b>";
+        var today = new Date();
+        if ( today < release.get('ReleaseDate') && today > release.get('ReleaseStartDate') ) {
+            var total_days = 1 + Rally.technicalservices.util.Utilities.daysBetween(release.get('ReleaseStartDate'),release.get('ReleaseDate'),true);
+            var remaining_days = 1 + Rally.technicalservices.util.Utilities.daysBetween(release.get('ReleaseDate'),today,true);
+            
+            var ratio_time_elapsed = 1 - ( remaining_days / total_days );
+            this._calculateCompletion(release.get('Name')).then({
+                scope: this,
+                success: function(results){
+                    var ratio_complete = results[0];
+                    var percentage_complete = Ext.util.Format.number((100*ratio_complete),"0");
+                    if ( ratio_complete === -1 ) {
+                        summary_message += "<br/>No items scheduled.";
+                    } else {
+                        var targeting_ratio = ratio_complete / ratio_time_elapsed;
+                        var status =  "<span class='ts-critical icon-minus'> </span> Critical";
+                        if ( targeting_ratio >= 0.9 ) {
+                            status = "<span class='icon-ok ts-good'> </span> Good";
+                        } else if ( targeting_ratio >= 0.7) {
+                            status = "<span class='icon-warning ts-risk'> </span> At Risk";
+                        }
+                        summary_message += "<b> Release Health is " + status + "</b>";      
+                        summary_message += "<br/>With " + remaining_days  + " workdays remaining in a ";
+                        summary_message += total_days + "-workday release";
+                        
+                        summary_message += ", " + percentage_complete + "% has been accepted.";
+                    }
+                    summary_container.update({summary_message:summary_message});
+                },
+                failure: function(error) {
+                    alert(error);
+                }
+            });            
+        } else if ( today > release.get('ReleaseDate') ) {
+            summary_message += " <b>- Release Completed</b>";
+            summary_container.update({summary_message:summary_message});
+        } else {
+            summary_message += " <b>- Release Has Not Begun</b>";
+            summary_container.update({summary_message:summary_message});
+        }
+    },
+    _calculateCompletion: function(release_name) {
+        var deferred = Ext.create('Deft.Deferred');
+        var measure_field_name = "Count";
+        var group_field_name = "ScheduleState";
+        
+        var filters = [{ property:'Release.Name',value: release_name}];
+        var fetch = [group_field_name,measure_field_name];
+        var promises = [
+            this._getItems("HierarchicalRequirement",fetch,filters),
+            this._getItems("Defect",fetch,filters),
+            this._getItems("TestSet",fetch,filters)];
+        
+        Deft.Promise.all(promises).then({
+            scope: this,
+            success: function(records) {
+                var work_items = Ext.Array.flatten(records);
+                var number_accepted = 0;
+                var total_number_of_items = work_items.length;
+                var accepted_states = Ext.Array.slice(this.schedule_states,-2);
+                console.log("Accepted States",accepted_states);
+                Ext.Array.each(work_items,function(item){
+                    if ( Ext.Array.indexOf(accepted_states,item.get(group_field_name)) > -1 ) {
+                        number_accepted += 1;
+                    }
+                    console.log(number_accepted," of ",total_number_of_items);
+                });
+                var ratio = -1;
+                if ( total_number_of_items > 0 ) {
+                    ratio = number_accepted/total_number_of_items;
+                }
+                deferred.resolve([ratio]);
+                
+            },
+            failure: function(error) {
+                alert(error);
+            }
+        });
+        return deferred;
     },
     _addStoryPieBox: function(container,release_name){
         var chart_box = container.add({
@@ -111,9 +211,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
             success: function(records) {
                 var work_items = Ext.Array.flatten(records);
                 if ( group_field_name == "PercentDoneByStoryCount" ) {
-                   
                     Ext.Array.each( work_items, function(item) {
-                        
                         if ( item.get(group_field_name) < 1 ) {
                             item.set("Status","Complete");
                         } else {
