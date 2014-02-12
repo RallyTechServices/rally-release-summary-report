@@ -28,9 +28,11 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         release: null,
         /*
          * @cfg {String}
-         * Determine health from % of stories accepted or % of PIs completed
+         * Determine health 
+         * from % of stories accepted (Acceptance) 
+         * or % of PIs completed (FeatureCompletion)
          */
-        health_source: 'UserStory',
+        health_source: 'Acceptance',
         /*
          * @cfg [{String}]
          * 
@@ -45,9 +47,10 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         this._constructDisplay();
     },
     _constructDisplay: function() {
+        var health_source = this.health_source || "Acceptance";
         var show_story_pie = this.show_story_pie;
         var show_feature_pie = this.show_feature_pie;
-        // TODO: change to a real project, not just an object
+
         var project_name = this.project.Name;
         var release_name = this.release.get("Name");
                 
@@ -108,7 +111,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                         summary_message += "<br/>With " + remaining_days  + " workdays remaining in a ";
                         summary_message += total_days + "-workday release";
                         
-                        summary_message += ", " + percentage_complete + "% has been accepted.";
+                        summary_message += ", " + percentage_complete + "% is done.";
                     }
                     summary_container.update({summary_message:summary_message});
                 },
@@ -125,6 +128,22 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         }
     },
     _calculateCompletion: function(release_name) {
+        var deferred = Ext.create('Deft.Deferred');
+        var promise = null;
+        if ( this.health_source == "Acceptance" ) {
+            promise = this._calculateCompletionFromAcceptance(release_name);
+        } else if ( this.health_source == "FeatureCompletion" ) {
+            promise = this._calculateCompletionFromFeatureCompletion(release_name);
+        }
+        Deft.Promise.all([promise]).then({
+            scope: this,
+            success:function(records){deferred.resolve(records);},
+            failure:function(error){deferred.reject(error);}
+        });
+        
+        return deferred;
+    },
+    _calculateCompletionFromAcceptance: function(release_name) {
         var deferred = Ext.create('Deft.Deferred');
         var measure_field_name = "Count";
         var group_field_name = "ScheduleState";
@@ -143,13 +162,48 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                 var number_accepted = 0;
                 var total_number_of_items = work_items.length;
                 var accepted_states = Ext.Array.slice(this.schedule_states,-2);
-                console.log("Accepted States",accepted_states);
                 Ext.Array.each(work_items,function(item){
                     if ( Ext.Array.indexOf(accepted_states,item.get(group_field_name)) > -1 ) {
                         number_accepted += 1;
                     }
-                    console.log(number_accepted," of ",total_number_of_items);
                 });
+                var ratio = -1;
+                if ( total_number_of_items > 0 ) {
+                    ratio = number_accepted/total_number_of_items;
+                }
+                deferred.resolve([ratio]);
+                
+            },
+            failure: function(error) {
+                alert(error);
+            }
+        });
+        return deferred;
+    },
+    _calculateCompletionFromFeatureCompletion: function(release_name) {
+        var deferred = Ext.create('Deft.Deferred');
+        var measure_field_name = "Count";
+        var group_field_name = "PercentDoneByStoryCount";
+        
+        var filters = [{ property:'Release.Name',value: release_name}];
+        var fetch = [group_field_name,measure_field_name];
+        var promises = [this._getItems("PortfolioItem/Feature",fetch,filters)];
+        
+        Deft.Promise.all(promises).then({
+            scope: this,
+            success: function(records) {
+                var work_items = Ext.Array.flatten(records);
+                var number_accepted = 0;
+                var total_number_of_items = work_items.length;
+                
+                if ( group_field_name == "PercentDoneByStoryCount" ) {
+                    Ext.Array.each( work_items, function(item) {
+                        if ( item.get(group_field_name) < 1 ) {
+                            number_accepted += 1;
+                        }
+                    });
+                }
+                
                 var ratio = -1;
                 if ( total_number_of_items > 0 ) {
                     ratio = number_accepted/total_number_of_items;
@@ -203,8 +257,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         
         var filters = [{ property:'Release.Name',value: release_name}];
         var fetch = [group_field_name,measure_field_name];
-        var promises = [
-            this._getItems("PortfolioItem/Feature",fetch,filters)];
+        var promises = [this._getItems("PortfolioItem/Feature",fetch,filters)];
         
         Deft.Promise.all(promises).then({
             scope: this,

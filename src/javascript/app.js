@@ -45,15 +45,33 @@ Ext.define('CustomApp', {
             show_feature_pie: this.getSetting('show_feature_status'),
             project: this.getContext().getProject(),
             release: this.release_box.getRecord(),
-            schedule_states: this.schedule_states
+            schedule_states: this.schedule_states,
+            health_source: this.getSetting('health_source')
         });
     },
     getSettingsFields: function() {
-        return [{
+        var health_store = Ext.create('Rally.data.custom.Store',{
+            data: [
+                {Name:'Acceptance',Value:'Acceptance'},
+                {Name:'Feature Completion',Value:'FeatureCompletion'}
+            ]
+        });
+        
+        return [
+        { 
+            xtype:'combobox',
+            fieldLabel: 'Determine Health Based On',
+            store: health_store,
+            displayField:'Name',
+            valueField:'Value',
+            labelWidth:150,
+            name: 'health_source'
+        },
+        {
             name: 'show_story_states',
             xtype: 'rallycheckboxfield',
             labelWidth: 150,
-            fieldLabel: 'Show Story State Distribution'
+            fieldLabel: 'Show Story Status'
         },
         {
             name: 'show_feature_status',
