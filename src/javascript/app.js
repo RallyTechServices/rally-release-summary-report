@@ -54,7 +54,8 @@ Ext.define('CustomApp', {
             project: this.root_project,
             release: this.release_box.getRecord(),
             schedule_states: this.schedule_states,
-            health_source: health_source
+            health_source: health_source,
+            show_burndown: this.getSetting('show_burndown')
         });
         
         if ( this.getContext().get('projectScopeDown') ) {
@@ -72,7 +73,8 @@ Ext.define('CustomApp', {
                             project: child,
                             release: me.release_box.getRecord(),
                             schedule_states: me.schedule_states,
-                            health_source: health_source
+                            health_source: health_source,
+                            show_burndown: me.getSetting('show_burndown')
                         });
                     });
                 }
@@ -92,6 +94,12 @@ Ext.define('CustomApp', {
             labelWidth: 150,
             xtype: 'rallycheckboxfield',
             fieldLabel: 'Show Feature Status'
+        },
+        {
+            name: 'show_burndown',
+            labelWidth: 150,
+            xtype: 'rallycheckboxfield',
+            fieldLabel: 'Show Burndown Chart'
         },
         { 
             fieldLabel: 'Determine Health Based On',

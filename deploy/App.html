@@ -3,11 +3,11 @@
 <head>
     <title>Release Health</title>
     <!--  (c) 2014 Rally Software Development Corp.  All Rights Reserved. -->
-    <!--  Build Date: Wed Feb 12 2014 14:02:56 GMT-0800 (PST) -->
+    <!--  Build Date: Wed Feb 12 2014 15:16:01 GMT-0800 (PST) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Wed Feb 12 2014 14:02:56 GMT-0800 (PST)";
-        var CHECKSUM = 35432471605;
+        var APP_BUILD_DATE = "Wed Feb 12 2014 15:16:01 GMT-0800 (PST)";
+        var CHECKSUM = 92169535199;
     </script>
     
     <script type="text/javascript" src="/apps/2.0rc2/sdk.js"></script>
@@ -15,10 +15,479 @@
     <script type="text/javascript">
         Rally.onReady(function() {
              
+Ext.define('Rally.technicalservices.SmallerBurndown',{
+    extend: 'Ext.Container',
+    alias: 'widget.technicalservicessmallerburndown',
+    config: {
+        /*
+         * @cfg {Ext.data.Model}
+         * The project for context (required)
+         */
+        project: null,
+        /*
+         * @cfg {Ext.data.Model}
+         * The release for filtering
+         */
+        release: null,
+        height: 160,
+        width: 320,
+        alternate_pi_size_field: 'c_PIPlanEstimate',
+        alternate_wp_size_field: 'PlanEstimate',
+        alternate_leaf_size_field: 'LeafStoryPlanEstimateTotal',
+        alternate_leaf_accepted_size_field: 'AcceptedLeafStoryPlanEstimateTotal'
+    },
+    constructor: function(config) {
+        this.mergeConfig(config);
+        this.callParent([this.config]);
+        this._getReleaseOids(this.release.get('Name')).then({
+            scope: this,
+            success: function(records) {
+                var start_date = this.release.get('ReleaseStartDate');
+                var end_date =   this.release.get('ReleaseDate');
+                this._getData(records,start_date,end_date);
+            }
+        });
+    },
+     _getReleaseOids: function(release_name) {
+        var deferred = Ext.create('Deft.Deferred');
+        Ext.create('Rally.data.wsapi.Store',{
+            model:'Release',
+            fetch: ['ObjectID'],
+            filters: [{property:'Name',value:release_name}],
+            autoLoad: true,
+            context: { project: this.project.get('_ref') },
+            listeners: {
+                scope: this,
+                load: function(store,releases){
+                    var release_oids = [];
+                    Ext.Array.each(releases,function(release){
+                        release_oids.push(release.get('ObjectID'));
+                    });
+                    deferred.resolve( release_oids );
+                }
+            }
+        });
+        return deferred;
+    },
+    _getData: function(release_oids,start_date,end_date) {
+        this._getFeatureScope(release_oids,start_date,end_date,this.alternate_pi_size_field);
+    },
+    _getFeatureScope: function(release_oids,start_date,end_date,field_name){
+        var me = this;
+        this._mask("Loading Historical Data");
+
+        var model_types = ['PortfolioItem'];
+        this.config = {
+            start_date:start_date,
+            end_date:end_date,
+            day_to_week_switch_point: 60,
+            baseline_field_name: field_name,
+            release_oids: release_oids,
+            model_types: model_types
+        };
+        var config = this.config;
+        var array_of_days = Rally.technicalservices.util.Utilities.arrayOfDaysBetween(config.start_date,config.end_date,true,config.day_to_week_switch_point);
+        var promises = _.map(array_of_days,me._getSnapshots,this);
+        
+        Deft.Promise.all(promises).then({
+            scope: this,
+            success: function(days) {
+                // got back an array of calculated data for each day (tsday model) (plus the null back from the other call)
+                me._unmask();
+                me._makeChart(days);
+            }, 
+            failure: function(records) {
+                console.log("oops");
+            }
+        });
+    },
+    _getSnapshots:function(day){
+        var me = this;
+        var config = this.config;
+        
+        var deferred = Ext.create('Deft.Deferred');
+        
+        var project = this.project.get('ObjectID');
+        var day_calculator = Ext.create('TSDay',{
+            piSizeFieldName: me.alternate_pi_size_field,
+            wpSizeFieldName: me.alternate_wp_size_field,
+            JSDate: day
+        });
+        
+        var fetch = [ me.alternate_pi_size_field,me.alternate_wp_size_field,
+            me.alternate_leaf_size_field, me.alternate_leaf_accepted_size_field,
+            "_TypeHierarchy","ScheduleState","PercentDoneByStoryPlanEstimate"];
+
+        if ( day < new Date() ) {
+            Ext.create('Rally.data.lookback.SnapshotStore',{
+                fetch: fetch,
+                hydrate: ['_TypeHierarchy','ScheduleState'],
+                autoLoad: true,
+                filters: [
+                    {property:'Release',operator:'in',value:config.release_oids},
+                    {property:'_TypeHierarchy',operator:'in',value:config.model_types},
+                    {property:'__At',operator:'=',value:Rally.util.DateTime.toIsoString(day)},
+                    {property:'_ProjectHierarchy', value:project}
+                ],
+                listeners: {
+                    load: function(store,snaps,success){
+                        if (success) {    
+                            Ext.Array.each(snaps, function(snap){
+                                day_calculator.addSnap(snap);
+                            });
+                            deferred.resolve(day_calculator);
+                        } else {
+                            deferred.reject("Error Loading Snapshots for " + day);
+                        }
+                    },
+                    scope: this
+                }
+            });
+            return deferred.promise;
+        } else {
+            return day_calculator;
+        }
+    },
+    _makeChart: function(days){
+        var config = this.config;
+        var categories = this._getCategories(days);
+        var series = this._getSeries(days);
+        var increment = this._getIncrement(days);
+
+        var colors = ['#CC8800','#CC8800','#6699FF','#6699FF'];
+        
+        if ( categories[0] > new Date() ) {
+            this.add({
+                xtype:'container',
+                html:'Release has not yet started'
+            });
+            this._unmask();
+        } else {
+            var chart = Ext.create('Rally.ui.chart.Chart',{
+                chartColors: colors,
+                chartData: {
+                    series: series
+                },
+                chartConfig: {
+                    chart: { 
+                        type: 'area',
+                        width: this.width - 10,
+                        height: this.height - 10
+                    },
+                    title: { text: '', align: 'center' },
+                    tooltip: {
+                        formatter: function() {
+                            if ( /deal/.test(this.series.name) ) {
+                                return false;
+                            } else {
+                                return this.series.name + ': <b>'+ this.y +'</b>';
+                            }
+                        }
+                    },
+                    legend: { enabled: false },
+                    xAxis: [{
+                        categories: categories,
+                        tickLength: 0,
+                        labels: {
+                            enabled: false,
+                            align: 'left',
+                            rotation: 70,
+                            formatter: function() {
+                                if ( increment < 1 ) {
+                                    return Ext.Date.format(this.value,'H:i');
+                                }
+                                return Ext.Date.format(this.value,'d-M');
+                            }
+                        }
+                    }],
+                    yAxis: [ { labels: { enabled: false }, title: {text: ''} }],
+                    plotOptions: {
+                        series: {
+                            marker: { enabled: false }
+                        }
+                    }
+                }
+            });
+            chart.setChartColors(colors);
+            this.add(chart);
+        }        
+    },
+    _getCategories: function(days){
+        var categories = [];
+        Ext.Array.each(days,function(day){
+            categories.push(day.get('JSDate'));
+        });
+        return categories;
+    },
+    _getSeries: function(days){
+        var series = [];
+        
+        var pi_size_data = [];
+        var wp_size_data = [];
+        var wp_accepted_data = [];
+        var leaf_size_data = [];
+        var leaf_accepted_size_data = [];
+        var leaf_todo_size_data = [];
+        var pi_todo_size_data = [];
+        
+        Ext.Array.each(days, function(day){
+            var pi_size = day.get('piSizeTotal');
+            var wp_size = day.get('wpSizeTotal');
+            var wp_accepted_size = day.get('wpAcceptedTotal');
+            var leaf_size = day.get('leafTotal');
+            var leaf_accepted_size = day.get('leafAcceptedTotal');
+            //var leaf_todo_size = leaf_size - leaf_accepted_size;
+            var pi_todo_size = day.get('piUnacceptedTotal'); 
+            var leaf_todo_size = day.get('leafUnacceptedTotal'); 
+            
+            if ( day.get('JSDate') > new Date() ) {
+                pi_size = null;
+                wp_size = null;
+                wp_accepted_size = null;
+                leaf_size = null;
+                leaf_accepted_size = null;
+                leaf_todo_size = null;
+                pi_todo_size = null;
+            }
+            pi_size_data.push(pi_size);
+            wp_size_data.push(wp_size);
+            wp_accepted_data.push(wp_accepted_size);
+            leaf_size_data.push(leaf_size);
+            leaf_accepted_size_data.push(leaf_accepted_size);
+            leaf_todo_size_data.push(leaf_todo_size);
+            pi_todo_size_data.push(pi_todo_size);
+        });
+        
+//        var pi_extension_data = this._getExtensionArray(pi_size_data);
+        var ideal_data_by_pi = this._getIdealLine(pi_size_data);        
+//        series.push({type:'line',name:'Feature Scope',data:pi_size_data});
+//        series.push({type:'line',name:'Feature Scope (extended)',data:pi_extension_data,dashStyle: 'dash',showInLegend: false});
+
+//        var leaf_extension_data = this._getExtensionArray(leaf_size_data);
+        var ideal_data_by_leaf = this._getIdealLine(leaf_size_data);
+//        series.push({type:'line',name:'Leaf Story Scope',data:leaf_size_data});
+//        series.push({type:'line',name:'Leaf Story Scope (extended)',data:leaf_extension_data,dashStyle: 'dash',showInLegend: false});
+        
+        series.push({type:'column',name:'Remaining Feature Points',data:pi_todo_size_data});
+        series.push({type:'line',name:'Ideal (by Feature Scope)',data:ideal_data_by_pi});
+        series.push({type:'column',name:'Remaining Story Points',data:leaf_todo_size_data});
+        series.push({type:'line',name:'Ideal (by Story Scope)',data:ideal_data_by_leaf});
+        //series.push({type:'column',name:'Accepted',data:leaf_accepted_size_data});
+
+//        var leaf_trend_data = this._getTrendData(leaf_size_data,leaf_accepted_size_data);
+//        series.push({type:'line',name:'Trend',data:leaf_trend_data});
+        return series;
+    },
+    _getTrendData: function(scope_data,accepted_data) {
+        var trend = [];
+        Ext.Array.each(scope_data, function(size){
+            trend.push(null);
+        });
+        var scope = null;
+        var accepted = null;
+        var accepted_index = null;
+        Ext.Array.each(scope_data,function(size){
+            if ( size !== null ) {
+                scope = size;
+            }
+        });
+        Ext.Array.each(accepted_data,function(size,index){
+            if ( size !== null ) {
+                accepted = size;
+                accepted_index = index;
+            }
+        });
+        
+        if ( accepted && accepted > 0 && accepted_index > 0) {
+            trend = [];
+            var incline = accepted / accepted_index;
+            var point = 0 - incline;
+            Ext.Array.each(scope_data,function(size){
+                if ( point !== null ) {
+                    point = point + incline;
+                }
+                trend.push(point);
+                if ( point > scope ) {
+                    point = null;
+                }
+            });
+        }
+        return trend;
+    },
+    _getIdealLine: function(size_data){
+        var max = Ext.Array.max(size_data);
+        var decline =  max/( size_data.length - 1 );
+        
+        var ideal_line = [];
+        var next_point = max;
+        Ext.Array.each(size_data,function(size){
+            if ( next_point < 0 ) { next_point = 0; }
+            ideal_line.push(parseFloat(Ext.util.Format.number(next_point,'0.00'),10));
+            next_point = next_point - decline;
+        });
+        return ideal_line;
+    },
+    _getExtensionArray: function(size_data) {
+        var extension_data = [];
+        var length_of_data = size_data.length;
+        var index_of_last_valid_value = -1;
+        var value_of_last_valid_value = null;
+        Ext.Array.each(size_data,function(size,idx){
+            if (size) {
+                index_of_last_valid_value = idx;
+                value_of_last_valid_value = size;
+            }
+            extension_data.push(null);
+        });
+        
+        Ext.Array.each(extension_data,function(size,idx,original_array){
+            if ( idx >= index_of_last_valid_value){
+                original_array[idx] = value_of_last_valid_value;
+            }
+        });
+        
+        return extension_data;
+    },
+    /*
+     * determine what the distance between two x values is
+     */
+    _getIncrement: function(days){
+        var increment = 0;
+        if ( days.length > 1 ) {
+            increment = Rally.util.DateTime.getDifference(days[1].get('JSDate'),days[0].get('JSDate'),'day');
+        }
+        return increment;
+    },
+    _mask: function(text) {
+        var me = this;
+        setTimeout(function(){
+            me.setLoading(text);
+        },10);
+    },
+    _unmask: function() {
+        var me = this;
+        setTimeout(function(){
+            me.setLoading(false);
+        },10);
+    }
+});
+/**
+ * a calculator for each day of data,
+ * given a snap for that day, will calculate a
+ * ** baseline of total value of a given field
+ * 
+ * assumes that each individual snap represents one unique item
+ */
+ 
+ Ext.define('TSDay',{
+    extend: 'Ext.data.Model',
+    group_totals: {},
+    fields: [
+        {name:'JSDate',type:'date',defaultValue:new Date()},
+        {name:'piSizeFieldName',type:'string',defaultValue:'c_PIPlanEstimate'}, /* the name of the field with a value to add (or count), remember the c_! */
+        {name:'piSizeTotal',type:'number',defaultValue:0},
+        {name:'wpSizeFieldName',type:'string',defaultValue:'PlanEstimate'},
+        {name:'wpSizeTotal',type:'number',defaultValue:0},
+        {name:'wpAcceptedTotal',type:'number',defaultValue:0},
+        {name:'leafSizeFieldName',type:'string',defaultValue:'LeafStoryPlanEstimateTotal'},
+        {name:'leafAcceptedSizeFieldName',type:'string',defaultValue:'AcceptedLeafStoryPlanEstimateTotal'},
+        {name:'leafAcceptedTotal',type:'number',defaultValue:0}, /* doesn't care about feature */
+        {name:'leafUnacceptedTotal',type:'number',defaultValue:0}, /* cares about feature */
+        {name:'piUnacceptedTotal',type:'number',defaultValue:0}, /* cares about feature */
+        {name:'leafTotal',type:'number',defaultValue:0}
+    ],
+    constructor: function(data) {
+        this.group_totals = {};
+        this.callParent(arguments);
+    },
+    /**
+     * Given a single lookback snapshot, aggregate data
+     * @param {} snap
+     */
+    addSnap: function(snap){
+        var record_type_hierarchy = snap.get('_TypeHierarchy');
+        if ( !record_type_hierarchy || Ext.Array.indexOf(record_type_hierarchy,'PortfolioItem') !== -1 ) {
+            this._updatePIData(snap);
+        }
+        if ( !record_type_hierarchy || 
+            Ext.Array.indexOf(record_type_hierarchy,'HierarchicalRequirement') !== -1 || 
+            Ext.Array.indexOf(record_type_hierarchy,'Defect') !== -1 ) {
+            
+            this._updateWPData(snap);
+        }
+    },
+    _updatePIData:function(snap){
+        var pi_total = this.get('piSizeTotal');
+        var leaf_total = this.get('leafTotal');
+        var leaf_acceptance_total = this.get('leafAcceptedTotal');
+        var leaf_unaccepted_total = this.get('leafUnacceptedTotal');
+        var pi_unaccepted_total = this.get('piUnacceptedTotal');
+        
+        var pi_field_name = this.get('piSizeFieldName');
+        var leaf_size_field_name = this.get('leafSizeFieldName');
+        var leaf_accepted_size_field_name = this.get('leafAcceptedSizeFieldName');
+        
+        var percent_done = snap.get('PercentDoneByStoryPlanEstimate');
+        var pi_value_in_snap = 0;
+        var leaf_value_in_snap = 0;
+        var leaf_accepted_value_in_snap = 0;
+
+        if ( pi_field_name === "Count" ) {
+            pi_value_in_snap = 1;
+        } else {
+            if (Ext.isNumber(snap.get(pi_field_name))) {
+                pi_value_in_snap = snap.get(pi_field_name);
+            }
+        }
+        if (Ext.isNumber(snap.get(leaf_size_field_name))){
+            leaf_value_in_snap = snap.get(leaf_size_field_name);
+        }
+        if (Ext.isNumber(snap.get(leaf_accepted_size_field_name))){
+            leaf_accepted_value_in_snap = snap.get(leaf_accepted_size_field_name);
+        }
+
+        pi_total = pi_total + pi_value_in_snap;
+                
+        if ( percent_done < 1 ) {
+            leaf_unaccepted_total = leaf_unaccepted_total + leaf_value_in_snap;
+            pi_unaccepted_total = pi_unaccepted_total + pi_value_in_snap;
+        }
+        
+        leaf_total = leaf_total + leaf_value_in_snap;
+        leaf_acceptance_total = leaf_acceptance_total + leaf_accepted_value_in_snap;
+        this.set('piSizeTotal',pi_total);
+        this.set('leafTotal',leaf_total);
+        this.set('leafAcceptedTotal',leaf_acceptance_total);
+        this.set('piUnacceptedTotal',pi_unaccepted_total);
+        this.set('leafUnacceptedTotal',leaf_unaccepted_total);
+    },
+    _updateWPData:function(snap){
+        var wp_total = this.get('wpSizeTotal');
+        var wp_accepted_total = this.get('wpAcceptedTotal');
+        var wp_field_name = this.get('wpSizeFieldName');
+        
+        var value_in_snap = 0;
+        if ( wp_field_name === "Count" ) {
+            value_in_snap = 1;
+        } else {
+            if (Ext.isNumber(snap.get(wp_field_name))) {
+                value_in_snap = snap.get(wp_field_name);
+            }
+        }
+        wp_total = wp_total + value_in_snap;
+        this.set('wpSizeTotal',wp_total);
+
+        if ( snap.get('ScheduleState') && snap.get('ScheduleState') == "Accepted" ) {
+            wp_accepted_total = wp_accepted_total + value_in_snap;
+            this.set('wpAcceptedTotal',wp_accepted_total);
+        }
+    }
+    
+ });
+
 Ext.define('Rally.technicalservices.HealthSummary',{
     extend: 'Ext.Container',
     alias: 'widget.technicalserviceshealthsummary',
-   /* requires: ['Rally.technicalservices.util.Utilities'], */
     config: {
         /*
          * @cfg {Boolean}
@@ -33,6 +502,12 @@ Ext.define('Rally.technicalservices.HealthSummary',{
          * 
          */
         show_feature_pie: false,
+        /*
+         * @cfg {Boolean}
+         * Set to true to show a burndown chart that includes Features
+         * 
+         */
+        show_burndown: false,
         /*
          * @cfg {Ext.data.Model}
          * The project for context (required)
@@ -70,6 +545,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         var health_source = this.health_source || "Acceptance";
         var show_story_pie = this.show_story_pie;
         var show_feature_pie = this.show_feature_pie;
+        var show_burndown = this.show_burndown;
 
         var project_name = this.project.get("Name");
         var release_name = this.release.get("Name");
@@ -96,9 +572,9 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         if ( show_feature_pie ) {
             this._addFeaturePieBox(this.down('#chart_boxes'),release_name);
         }
-//        if ( show_story_pie ) {
-//            this._addStoryPieBox(this.down('#chart_boxes'),release_name);
-//        }
+        if ( show_burndown ) {
+            this._addBurndownBox(this.down('#chart_boxes'),release_name);
+        }
     },
     _setSummaryHTML: function(summary_container) {
         var project_name = this.project.get('Name');
@@ -125,8 +601,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                         summary_message += "<br/>No " + record_names[this.health_source] + " scheduled.";
                     } else {
                         var targeting_ratio = ratio_complete / ratio_time_elapsed;
-                        console.log(release_start,release_end,total_days);
-                        console.log(ratio_complete, ratio_time_elapsed, targeting_ratio);
+
                         var status =  "<span class='ts-critical icon-minus'> </span> Critical";
                         if ( targeting_ratio >= 0.9 ) {
                             status = "<span class='icon-ok ts-good'> </span> Good";
@@ -242,6 +717,18 @@ Ext.define('Rally.technicalservices.HealthSummary',{
             }
         });
         return deferred;
+    },
+    _addBurndownBox: function(container,release_name){
+        var chart_box = container.add({
+            xtype:'container',
+            height: this.pie_height
+        });
+        chart_box.add({
+            xtype:'technicalservicessmallerburndown',
+            height: this.pie_height,
+            project: this.project,
+            release: this.release
+        });
     },
     _addStoryPieBox: function(container,release_name){
         var chart_box = container.add({
@@ -702,7 +1189,8 @@ Ext.define('CustomApp', {
             project: this.root_project,
             release: this.release_box.getRecord(),
             schedule_states: this.schedule_states,
-            health_source: health_source
+            health_source: health_source,
+            show_burndown: this.getSetting('show_burndown')
         });
         
         if ( this.getContext().get('projectScopeDown') ) {
@@ -720,7 +1208,8 @@ Ext.define('CustomApp', {
                             project: child,
                             release: me.release_box.getRecord(),
                             schedule_states: me.schedule_states,
-                            health_source: health_source
+                            health_source: health_source,
+                            show_burndown: me.getSetting('show_burndown')
                         });
                     });
                 }
@@ -740,6 +1229,12 @@ Ext.define('CustomApp', {
             labelWidth: 150,
             xtype: 'rallycheckboxfield',
             fieldLabel: 'Show Feature Status'
+        },
+        {
+            name: 'show_burndown',
+            labelWidth: 150,
+            xtype: 'rallycheckboxfield',
+            fieldLabel: 'Show Burndown Chart'
         },
         { 
             fieldLabel: 'Determine Health Based On',

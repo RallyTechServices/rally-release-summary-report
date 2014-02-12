@@ -1,7 +1,6 @@
 Ext.define('Rally.technicalservices.HealthSummary',{
     extend: 'Ext.Container',
     alias: 'widget.technicalserviceshealthsummary',
-   /* requires: ['Rally.technicalservices.util.Utilities'], */
     config: {
         /*
          * @cfg {Boolean}
@@ -16,6 +15,12 @@ Ext.define('Rally.technicalservices.HealthSummary',{
          * 
          */
         show_feature_pie: false,
+        /*
+         * @cfg {Boolean}
+         * Set to true to show a burndown chart that includes Features
+         * 
+         */
+        show_burndown: false,
         /*
          * @cfg {Ext.data.Model}
          * The project for context (required)
@@ -53,6 +58,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         var health_source = this.health_source || "Acceptance";
         var show_story_pie = this.show_story_pie;
         var show_feature_pie = this.show_feature_pie;
+        var show_burndown = this.show_burndown;
 
         var project_name = this.project.get("Name");
         var release_name = this.release.get("Name");
@@ -79,9 +85,9 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         if ( show_feature_pie ) {
             this._addFeaturePieBox(this.down('#chart_boxes'),release_name);
         }
-//        if ( show_story_pie ) {
-//            this._addStoryPieBox(this.down('#chart_boxes'),release_name);
-//        }
+        if ( show_burndown ) {
+            this._addBurndownBox(this.down('#chart_boxes'),release_name);
+        }
     },
     _setSummaryHTML: function(summary_container) {
         var project_name = this.project.get('Name');
@@ -108,8 +114,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                         summary_message += "<br/>No " + record_names[this.health_source] + " scheduled.";
                     } else {
                         var targeting_ratio = ratio_complete / ratio_time_elapsed;
-                        console.log(release_start,release_end,total_days);
-                        console.log(ratio_complete, ratio_time_elapsed, targeting_ratio);
+
                         var status =  "<span class='ts-critical icon-minus'> </span> Critical";
                         if ( targeting_ratio >= 0.9 ) {
                             status = "<span class='icon-ok ts-good'> </span> Good";
@@ -225,6 +230,18 @@ Ext.define('Rally.technicalservices.HealthSummary',{
             }
         });
         return deferred;
+    },
+    _addBurndownBox: function(container,release_name){
+        var chart_box = container.add({
+            xtype:'container',
+            height: this.pie_height
+        });
+        chart_box.add({
+            xtype:'technicalservicessmallerburndown',
+            height: this.pie_height,
+            project: this.project,
+            release: this.release
+        });
     },
     _addStoryPieBox: function(container,release_name){
         var chart_box = container.add({
