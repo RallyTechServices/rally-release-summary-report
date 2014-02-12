@@ -17,7 +17,7 @@ Ext.define('Rally.technicalservices.util.Utilities', {
         }
         
         var dDate1 = Ext.clone(begin_date_js).setHours(0,0,0,0);
-        var dDate2 = Ext.clone(end_date_js).setHours(0,0,0,0);
+        var dDate2 = Ext.clone(Rally.util.DateTime.add(end_date_js,"hour",1)).setHours(0,0,0,0);
         
         if ( dDate1 == dDate2 ) { return 0; }
         if (typeof dDate1 === "number") { dDate1 = new Date(dDate1); }
@@ -36,13 +36,26 @@ Ext.define('Rally.technicalservices.util.Utilities', {
             }
             var iWeekday1 = dDate1.getDay(); // day of week
             var iWeekday2 = dDate2.getDay();
-            iWeekday1 = (iWeekday1 == 0) ? 7 : iWeekday1; // change Sunday from 0 to 7
-            iWeekday2 = (iWeekday2 == 0) ? 7 : iWeekday2;
-            if ((iWeekday1 > 5) && (iWeekday2 > 5)) iAdjust = 1; // adjustment if both days on weekend
-            iWeekday1 = (iWeekday1 > 5) ? 5 : iWeekday1; // only count weekdays
-            iWeekday2 = (iWeekday2 > 5) ? 5 : iWeekday2;
-    
-            // calculate differnece in weeks (1000mS * 60sec * 60min * 24hrs * 7 days = 604800000)
+                        
+            if ( iWeekday1 == 0 || iWeekday1 == 6 ) {
+                // shift the first day to the following Monday
+                iWeekday1 = 1;
+                dDate1 = Rally.util.DateTime.add(dDate1,"day",1);
+                if ( iWeekday1 == 6 ) {
+                    dDate1 = Rally.util.DateTime.add(dDate1,"day",1);
+                }
+            }
+            
+            if ( iWeekday2 == 0 || iWeekday2 == 6 ) {
+                // shift the second day to the following Monday
+                iWeekday2 = 1;
+                dDate2= Rally.util.DateTime.add(dDate2,"day",1);
+                if ( iWeekday2 == 6 ) {
+                    dDate2 = Rally.util.DateTime.add(dDate2,"day",1);
+                }
+            }
+  
+            // calculate difference in weeks (1000mS * 60sec * 60min * 24hrs * 7 days = 604800000)
             iWeeks = Math.floor((dDate2.getTime() - dDate1.getTime()) / 604800000)
     
             if (iWeekday1 <= iWeekday2) {

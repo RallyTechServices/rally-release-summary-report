@@ -13,21 +13,20 @@ describe("Using the rally utilities",function() {
     var three_month_start_monday = new Date(2013,10,25,0,0,0);
     var three_month_end_monday = new Date(2014,0,27,0,0,0);
         
+    var friday_0000_end_of_jan = new Date(2014,00,31,0,0,0);
+    
+    var saturday_0000_start_of_feb = new Date(2014,01,01,0,0,0);
+    var friday_1159_end_of_feb   = new Date(2014,01,28,23,59,0);
+    
+    var middle_of_feb = new Date(2014,01,12,0,0,0);
+    var saturday_1159_start_of_mar = new Date(2014,02,01,23,59,0);
+
     describe("When counting time",function(){  
         it('should count the number of days as 0 if the same time', function() {
             var date1 = first_monday_begin;
             var date2 = first_monday_begin;
             expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2) ).toEqual(0);
 
-        });
-        
-        it('should count the number of days as 0 when different times, same day',function() {
-            
-            // 8th Month is September because Jan is 0
-            var date1 = first_monday_begin;
-            var date2 = first_monday_end;
-            
-            expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2) ).toEqual(0);
         });
         
         it('should count the number of days as 1 on the different days',function() {
@@ -51,7 +50,7 @@ describe("Using the rally utilities",function() {
             var date1 = first_monday_begin;
             var date2 = first_tuesday_end;
             
-            expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2) ).toEqual(1);
+            expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2) ).toEqual(2);
         });
         
         it('should not care if the days are supplied out of order',function() {
@@ -92,6 +91,21 @@ describe("Using the rally utilities",function() {
             var date2 = first_sunday_end;
             
             expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2,true) ).toEqual(0);
+        });
+    
+        it('should count weekdays when starting on Sat and covering several weeks',function() {
+            var date1 = saturday_0000_start_of_feb;
+            var date2 = friday_1159_end_of_feb;
+            
+            expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2,true) ).toEqual(20);
+        });
+        
+            
+        it('should count weekdays when starting on Wed & ending on Satruday and covering several weeks',function() {
+            var date1 = middle_of_feb;
+            var date2 = saturday_1159_start_of_mar;
+            
+            expect( Rally.technicalservices.util.Utilities.daysBetween(date1,date2,true) ).toEqual(13);
         });
     });
     describe("When getting an array of days",function(){

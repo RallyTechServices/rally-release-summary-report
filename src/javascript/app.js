@@ -11,10 +11,15 @@ Ext.define('CustomApp', {
     ],
     launch: function() {
         this.logger.log("Launched with context ", this.getContext());
-        this._getScheduleStates().then({
+        var project_oid = this.getContext().getProject().ObjectID;
+        Deft.Promise.all([this._getScheduleStates(),this._getProject(project_oid)]).then({
             scope: this,
-            success: function(states) {
+            success: function(results) {
+                var states = results[0];
+                var project = results[1][0];
                 this.schedule_states = states;
+                this.root_project = project;
+                
                 this.release_box = this.down('#release_box').add({
                     xtype:'rallyreleasecombobox',
                     fieldLabel: 'Release',
@@ -36,6 +41,9 @@ Ext.define('CustomApp', {
     },
     _constructDisplay: function() {
         this.logger.log("_constructDisplay");
+        var me = this;
+        
+        var health_source = this.getSetting('health_source') || "Acceptance";
         
         this.down('#display_box').removeAll();
         
@@ -43,11 +51,33 @@ Ext.define('CustomApp', {
             xtype:'technicalserviceshealthsummary',
             show_story_pie: this.getSetting('show_story_states'),
             show_feature_pie: this.getSetting('show_feature_status'),
-            project: this.getContext().getProject(),
+            project: this.root_project,
             release: this.release_box.getRecord(),
             schedule_states: this.schedule_states,
-            health_source: this.getSetting('health_source')
+            health_source: health_source
         });
+        
+        if ( this.getContext().get('projectScopeDown') ) {
+            this.root_project.getCollection('Children').load({
+                callback: function(children, operation, success) {
+                    Ext.Array.each(children, function(child) {
+                        var container = me.down('#display_box').add({
+                            xtype:'container',
+                            margin: '10 10 10 25'
+                        });
+                        container.add({
+                            xtype:'technicalserviceshealthsummary',
+                            show_story_pie: me.getSetting('show_story_states'),
+                            show_feature_pie: me.getSetting('show_feature_status'),
+                            project: child,
+                            release: me.release_box.getRecord(),
+                            schedule_states: me.schedule_states,
+                            health_source: health_source
+                        });
+                    });
+                }
+            });
+        }
     },
     getSettingsFields: function() {
         return [
@@ -107,6 +137,22 @@ Ext.define('CustomApp', {
                             states.push(null);
                         }
                         deferred.resolve(states);
+                    }
+                });
+            }
+        });
+        return deferred;
+    },
+    _getProject: function(project_oid) {
+        var deferred = Ext.create('Deft.Deferred');
+        var me = this;
+        
+        Rally.data.ModelFactory.getModel({
+            type: 'Project',
+            success: function(model) {
+                model.load(project_oid,{
+                    callback: function(result, operation) {
+                        deferred.resolve([result]);
                     }
                 });
             }

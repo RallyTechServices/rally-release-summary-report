@@ -39,7 +39,10 @@ Ext.define('Rally.technicalservices.HealthSummary',{
          * The schedule states for this workspace. The last TWO of the array
          * are Accepted and beyond Accepted. Use null if Accepted is the final state
          */
-        schedule_states: ["Defined","In-Progress","Completed","Accepted",null]
+        schedule_states: ["Defined","In-Progress","Completed","Accepted",null],
+        
+        pie_height: 160,
+        pie_width: 160
     },
     constructor: function(config) {
         this.mergeConfig(config);
@@ -51,7 +54,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         var show_story_pie = this.show_story_pie;
         var show_feature_pie = this.show_feature_pie;
 
-        var project_name = this.project.Name;
+        var project_name = this.project.get("Name");
         var release_name = this.release.get("Name");
                 
         this.add({
@@ -65,7 +68,6 @@ Ext.define('Rally.technicalservices.HealthSummary',{
             { 
                 xtype:'container',
                 itemId:'chart_boxes',
-                defaults: { padding: 5, margin: 5 },
                 layout: { type:'hbox' }
             }]
         });
@@ -82,15 +84,19 @@ Ext.define('Rally.technicalservices.HealthSummary',{
 //        }
     },
     _setSummaryHTML: function(summary_container) {
-        var project_name = this.project.Name;
+        var project_name = this.project.get('Name');
         var release = this.release;
         var done_text = { "Acceptance": " of stories accepted", "FeatureCompletion": "of features completed" };
+        var record_names = { "Acceptance": "stories", "FeatureCompletion": "features" };
+        
+        var release_start = release.get('ReleaseStartDate');
+        var release_end = release.get('ReleaseDate');
         
         var summary_message = "<b>" + project_name + "</b>";
         var today = new Date();
-        if ( today < release.get('ReleaseDate') && today > release.get('ReleaseStartDate') ) {
-            var total_days = 1 + Rally.technicalservices.util.Utilities.daysBetween(release.get('ReleaseStartDate'),release.get('ReleaseDate'),true);
-            var remaining_days = 1 + Rally.technicalservices.util.Utilities.daysBetween(release.get('ReleaseDate'),today,true);
+        if ( today < release_end && today > release_start ) {
+            var total_days = Rally.technicalservices.util.Utilities.daysBetween(release_start,release_end,true);
+            var remaining_days = Rally.technicalservices.util.Utilities.daysBetween(today,release_end,true);
             
             var ratio_time_elapsed = 1 - ( remaining_days / total_days );
             this._calculateCompletion(release.get('Name')).then({
@@ -98,10 +104,12 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                 success: function(results){
                     var ratio_complete = results[0];
                     var percentage_complete = Ext.util.Format.number((100*ratio_complete),"0");
-                    if ( ratio_complete === -1 ) {
-                        summary_message += "<br/>No items scheduled.";
+                    if ( percentage_complete == -100 ) {
+                        summary_message += "<br/>No " + record_names[this.health_source] + " scheduled.";
                     } else {
                         var targeting_ratio = ratio_complete / ratio_time_elapsed;
+                        console.log(release_start,release_end,total_days);
+                        console.log(ratio_complete, ratio_time_elapsed, targeting_ratio);
                         var status =  "<span class='ts-critical icon-minus'> </span> Critical";
                         if ( targeting_ratio >= 0.9 ) {
                             status = "<span class='icon-ok ts-good'> </span> Good";
@@ -138,7 +146,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         }
         Deft.Promise.all([promise]).then({
             scope: this,
-            success:function(records){deferred.resolve(records);},
+            success:function(records){deferred.resolve(Ext.Array.flatten(records));},
             failure:function(error){deferred.reject(error);}
         });
         
@@ -221,8 +229,8 @@ Ext.define('Rally.technicalservices.HealthSummary',{
     _addStoryPieBox: function(container,release_name){
         var chart_box = container.add({
             xtype:'container',
-            width: 160,
-            height: 325
+            height: this.pie_height,
+            width: this.pie_width
         });
         var measure_field_name = "Count";
         var group_field_name = "ScheduleState";
@@ -250,8 +258,8 @@ Ext.define('Rally.technicalservices.HealthSummary',{
     _addFeaturePieBox: function(container,release_name){
         var chart_box = container.add({
             xtype:'container',
-            width: 160,
-            height: 325
+            height: this.pie_height,
+            width: this.pie_width
         });
         var measure_field_name = "Count";
         var group_field_name = "PercentDoneByStoryCount";
@@ -285,12 +293,14 @@ Ext.define('Rally.technicalservices.HealthSummary',{
     },
     _getItems: function(model_type,fetch,filters) {
         var deferred = Ext.create('Deft.Deferred');
+        var project_ref = this.project.get('_ref');
         Ext.create('Rally.data.wsapi.Store',{
             model:model_type,
             filters: filters,
             limit:'Infinity',
             autoLoad: true,
             fetch: fetch,
+            context: { project: project_ref },
             listeners: {
                 scope: this,
                 load: function(store,records,successful,eOpts) {
@@ -330,8 +340,8 @@ Ext.define('Rally.technicalservices.HealthSummary',{
             chartConfig: {
                 chart: {
                     type:'pie',
-                    width: 150,
-                    height: 150
+                    width: this.pie_width - 10,
+                    height: this.pie_height - 10
                 },
                 title: { text:'' },
                 plotOptions: {
