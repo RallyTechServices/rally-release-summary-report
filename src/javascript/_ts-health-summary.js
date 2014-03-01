@@ -212,7 +212,7 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                 
                 if ( group_field_name == "PercentDoneByStoryCount" ) {
                     Ext.Array.each( work_items, function(item) {
-                        if ( item.get(group_field_name) < 1 ) {
+                        if ( item.get(group_field_name) == 1 ) {
                             number_accepted += 1;
                         }
                     });
@@ -292,9 +292,9 @@ Ext.define('Rally.technicalservices.HealthSummary',{
                 if ( group_field_name == "PercentDoneByStoryCount" ) {
                     Ext.Array.each( work_items, function(item) {
                         if ( item.get(group_field_name) < 1 ) {
-                            item.set("Status","Complete");
-                        } else {
                             item.set("Status","Not Complete");
+                        } else {
+                            item.set("Status","Complete");
                         }
                     });
                     group_field_name = "Status";
