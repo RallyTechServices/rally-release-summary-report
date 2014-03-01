@@ -45,16 +45,30 @@ Ext.define('Rally.technicalservices.HealthSummary',{
          * are Accepted and beyond Accepted. Use null if Accepted is the final state
          */
         schedule_states: ["Defined","In-Progress","Completed","Accepted",null],
-        
+        binary_states: ["Not Complete","Complete"],
+        binary_colors: ["#DB4D4D","#339966"],
         pie_height: 160,
         pie_width: 160
     },
     constructor: function(config) {
         this.mergeConfig(config);
         this.callParent([this.config]);
+        this._setColors();
         this._constructDisplay();
     },
+    _setColors: function() {
+        this.schedule_colors = ["#C93","#FF9","#527ACC","#339966"];
+        var colors = this.schedule_colors;
+        if ( this.schedule_states[0] && this.schedule_states[0] !== "Defined" ) {
+            this.schedule_colors.unshift("#D0D0D0");
+        }
+        if ( this.schedule_states[this.schedule_states.length-1] !== "Accepted" ) {
+            this.schedule_colors.push("#A8A8A8");
+        }
+        
+    },
     _constructDisplay: function() {
+        
         var health_source = this.health_source || "Acceptance";
         var show_story_pie = this.show_story_pie;
         var show_feature_pie = this.show_feature_pie;
@@ -233,8 +247,8 @@ Ext.define('Rally.technicalservices.HealthSummary',{
     },
     _addBurndownBox: function(container,release_name){
         var chart_box = container.add({
-            xtype:'container',
-            height: this.pie_height
+            xtype:'container'/*,
+            height: this.pie_height */
         });
         chart_box.add({
             xtype:'technicalservicessmallerburndown',
@@ -332,6 +346,13 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         return deferred.promise;
     },
     _getPie: function(records,measure_field_name,group_field_name){
+        var colors = this.schedule_colors;
+        var valid_group_names = this.schedule_states;
+        if ( group_field_name == "Status" ) {
+            colors = this.binary_colors;
+            valid_group_names = this.binary_states;
+        }
+        
         var totals_by_group = {};
         Ext.Array.each(records,function(record){
             var group=record.get(group_field_name) || "None";
@@ -347,37 +368,44 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         
         var series = [];
         var categories = [];
-        Ext.Object.each(totals_by_group,function(field,total){
-            series.push([field,total]);
-            categories.push(field);
+        var show_pie = false;
+        Ext.Array.each(valid_group_names,function(group_name){
+            var total = totals_by_group[group_name] || 0;
+            if ( total > 0 ) { show_pie = true; }
+            series.push([group_name,total]);
+            categories.push(group_name);
         });
         
-        var chart = {
-            xtype:'rallychart',
-            chartConfig: {
-                chart: {
-                    type:'pie',
-                    width: this.pie_width - 10,
-                    height: this.pie_height - 10
-                },
-                title: { text:'' },
-                plotOptions: {
-                    pie: {
-                        dataLabels: {
-                            enabled: false,
-                            connectorWidth: 0
-                        },
-                        tooltip: {
-                            headerFormat: '{point.key} ',
-                            pointFormat: '<b>{point.y}</b><br/>'
+        var chart = ({xtype:'container',html:'No data'});
+        if ( show_pie ) {
+            chart = Ext.create('Rally.ui.chart.Chart',{
+                chartConfig: {
+                    colors: colors,
+                    chart: {
+                        colors: colors,
+                        type:'pie',
+                        width: this.pie_width - 10,
+                        height: this.pie_height - 10
+                    },
+                    title: { text:'' },
+                    plotOptions: {
+                        pie: {
+                            dataLabels: {
+                                enabled: false,
+                                connectorWidth: 0
+                            },
+                            tooltip: {
+                                headerFormat: '{point.key} ',
+                                pointFormat: '<b>{point.y}</b><br/>'
+                            }
                         }
                     }
-                }
-            },
-            chartData: {
-                series: [{data:series}]
-            }            
-        };
+                },
+                chartData: {
+                    series: [{data:series}]
+                }            
+            });
+        }
         return chart;
     }
 });
