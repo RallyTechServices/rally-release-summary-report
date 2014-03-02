@@ -62,20 +62,22 @@ Ext.define('CustomApp', {
             this.root_project.getCollection('Children').load({
                 callback: function(children, operation, success) {
                     Ext.Array.each(children, function(child) {
-                        var container = me.down('#display_box').add({
-                            xtype:'container',
-                            margin: '10 10 10 25'
-                        });
-                        container.add({
-                            xtype:'technicalserviceshealthsummary',
-                            show_story_pie: me.getSetting('show_story_states'),
-                            show_feature_pie: me.getSetting('show_feature_status'),
-                            project: child,
-                            release: me.release_box.getRecord(),
-                            schedule_states: me.schedule_states,
-                            health_source: health_source,
-                            show_burndown: me.getSetting('show_burndown')
-                        });
+                        if ( child.get("State") == "Open" ) {
+                            var container = me.down('#display_box').add({
+                                xtype:'container',
+                                margin: '10 10 10 25'
+                            });
+                            container.add({
+                                xtype:'technicalserviceshealthsummary',
+                                show_story_pie: me.getSetting('show_story_states'),
+                                show_feature_pie: me.getSetting('show_feature_status'),
+                                project: child,
+                                release: me.release_box.getRecord(),
+                                schedule_states: me.schedule_states,
+                                health_source: health_source,
+                                show_burndown: me.getSetting('show_burndown')
+                            });
+                        }
                     });
                 }
             });

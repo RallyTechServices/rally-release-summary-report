@@ -371,9 +371,13 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         var show_pie = false;
         Ext.Array.each(valid_group_names,function(group_name){
             var total = totals_by_group[group_name] || 0;
-            if ( total > 0 ) { show_pie = true; }
-            series.push([group_name,total]);
-            categories.push(group_name);
+            if ( total > 0 ) { 
+                show_pie = true; 
+            }
+            if ( group_name !== null ) {
+                series.push([group_name,total]);
+                categories.push(group_name);
+            }
         });
         
         var chart = ({xtype:'container',html:'No data'});

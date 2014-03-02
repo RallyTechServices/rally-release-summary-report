@@ -3,11 +3,11 @@
 <head>
     <title>Release Health</title>
     <!--  (c) 2014 Rally Software Development Corp.  All Rights Reserved. -->
-    <!--  Build Date: Fri Feb 28 2014 18:57:17 GMT-0800 (PST) -->
+    <!--  Build Date: Sun Mar 02 2014 15:04:38 GMT-0800 (PST) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Fri Feb 28 2014 18:57:17 GMT-0800 (PST)";
-        var CHECKSUM = 96654373730;
+        var APP_BUILD_DATE = "Sun Mar 02 2014 15:04:38 GMT-0800 (PST)";
+        var CHECKSUM = 97262175206;
     </script>
     
     <script type="text/javascript" src="/apps/2.0rc2/sdk.js"></script>
@@ -858,9 +858,13 @@ Ext.define('Rally.technicalservices.HealthSummary',{
         var show_pie = false;
         Ext.Array.each(valid_group_names,function(group_name){
             var total = totals_by_group[group_name] || 0;
-            if ( total > 0 ) { show_pie = true; }
-            series.push([group_name,total]);
-            categories.push(group_name);
+            if ( total > 0 ) { 
+                show_pie = true; 
+            }
+            if ( group_name !== null ) {
+                series.push([group_name,total]);
+                categories.push(group_name);
+            }
         });
         
         var chart = ({xtype:'container',html:'No data'});
@@ -1225,20 +1229,22 @@ Ext.define('CustomApp', {
             this.root_project.getCollection('Children').load({
                 callback: function(children, operation, success) {
                     Ext.Array.each(children, function(child) {
-                        var container = me.down('#display_box').add({
-                            xtype:'container',
-                            margin: '10 10 10 25'
-                        });
-                        container.add({
-                            xtype:'technicalserviceshealthsummary',
-                            show_story_pie: me.getSetting('show_story_states'),
-                            show_feature_pie: me.getSetting('show_feature_status'),
-                            project: child,
-                            release: me.release_box.getRecord(),
-                            schedule_states: me.schedule_states,
-                            health_source: health_source,
-                            show_burndown: me.getSetting('show_burndown')
-                        });
+                        if ( child.get("State") == "Open" ) {
+                            var container = me.down('#display_box').add({
+                                xtype:'container',
+                                margin: '10 10 10 25'
+                            });
+                            container.add({
+                                xtype:'technicalserviceshealthsummary',
+                                show_story_pie: me.getSetting('show_story_states'),
+                                show_feature_pie: me.getSetting('show_feature_status'),
+                                project: child,
+                                release: me.release_box.getRecord(),
+                                schedule_states: me.schedule_states,
+                                health_source: health_source,
+                                show_burndown: me.getSetting('show_burndown')
+                            });
+                        }
                     });
                 }
             });
